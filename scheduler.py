@@ -21,7 +21,8 @@ def schedule_jobs(jobs_df, tanks_df, start_date):
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
-    results = []
+    results = []  # ★初期化ここに移動（常に存在するように）
+
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         for job_id in job_vars:
             start = solver.Value(job_vars[job_id]['start'])
@@ -33,4 +34,7 @@ def schedule_jobs(jobs_df, tanks_df, start_date):
                 'End': end,
                 'PlatingType': plating
             })
+    else:
+        print("⚠️ スケジューラが解を見つけられませんでした")
+
     return pd.DataFrame(results)
