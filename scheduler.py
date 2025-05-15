@@ -84,10 +84,11 @@ def schedule_jobs(jobs_df, tanks_df, start_date):
             results.append({
                 "JobID": jid,
                 "PlatingType": job_vars[jid]["PlatingType"],
-                "入槽開始": (base + pd.to_timedelta(s_soak, unit="m")).strftime('%Y-%m-%d %H:%M'),
-                "めっき開始": (base + pd.to_timedelta(s_plate, unit="m")).strftime('%Y-%m-%d %H:%M'),
-                "めっき終了": (base + pd.to_timedelta(e_plate, unit="m")).strftime('%Y-%m-%d %H:%M'),
-                "出槽終了": (base + pd.to_timedelta(e_rinse, unit="m")).strftime('%Y-%m-%d %H:%M')
+                "Soak Start": (base + pd.to_timedelta(s_soak, unit="m")).strftime('%Y-%m-%d %H:%M'),
+                "Plating Start": (base + pd.to_timedelta(s_plate, unit="m")).strftime('%Y-%m-%d %H:%M'),
+                "Plating End": (base + pd.to_timedelta(e_plate, unit="m")).strftime('%Y-%m-%d %H:%M'),
+                "Rinse End": (base + pd.to_timedelta(e_rinse, unit="m")).strftime('%Y-%m-%d %H:%M'),
             })
+
 
     return pd.DataFrame(results)
