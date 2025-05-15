@@ -1,29 +1,37 @@
 import pandas as pd
 from ortools.sat.python import cp_model
 
-def generate_working_minutes(num_days=14):
+def generate_working_minutes(num_days=30):
     minutes = set()
     for day in range(num_days):
         base = day * 1440
-        minutes.update(range(base + 510, base + 1050))  # 甲番 8:30〜17:30
-        minutes.update(range(base + 900, base + 1440))  # 乙番 15:00〜24:00
+        minutes.update(range(base + 510, base + 1050))  # 8:30–17:30
+        minutes.update(range(base + 900, base + 1440))  # 15:00–24:00
     return sorted(list(minutes))
 
 def schedule_jobs(jobs_df, tanks_df, start_date):
     model = cp_model.CpModel()
-    jobs_df["PlatingMin"] = (jobs_df["DurationHour"] * 60).astype(int)
+
+    # 対応：DurationHour or DurationMin
+    if "DurationHour" in jobs_df.columns:
+        jobs_df["PlatingMin"] = (jobs_df["DurationHour"] * 60).astype(int)
+    elif "DurationMin" in jobs_df.columns:
+        jobs_df["PlatingMin"] = jobs_df["DurationMin"].astype(int)
+    else:
+        raise KeyError("CSVに DurationHour または DurationMin の列が必要です。")
+
     jobs_df["SoakMin"] = jobs_df["入槽時間"].astype(int)
     jobs_df["RinseMin"] = jobs_df["出槽時間"].astype(int)
 
-    horizon = int(jobs_df[["PlatingMin", "SoakMin", "RinseMin"]].sum().sum() * 2)
-    working_minutes = generate_working_minutes(num_days=30)
+    horizon = int(jobs_df[["PlatingMin", "SoakMin", "RinseMin"]].sum().sum() * 1.5)
+    working_minutes = generate_working_minutes()
 
-    def limit_to_working(var):
+    def restrict_to_working(var):
         model.AddAllowedAssignments([var], [[m] for m in working_minutes])
 
     job_vars = {}
     for _, row in jobs_df.iterrows():
-        jid = row['JobID']
+        jid = str(row['JobID'])
         soak_dur = row['SoakMin']
         plate_dur = row['PlatingMin']
         rinse_dur = row['RinseMin']
@@ -44,18 +52,20 @@ def schedule_jobs(jobs_df, tanks_df, start_date):
         model.Add(s2 >= e1)
         model.Add(s3 >= e2)
 
-        # 人が必要な作業に時間帯制限
-        limit_to_working(s1)
-        limit_to_working(s3)
+        # 人が必要な作業は勤務帯内に制限
+        restrict_to_working(s1)
+        restrict_to_working(s3)
 
         job_vars[jid] = {
             "PlatingType": row["PlatingType"],
+            "s_soak": s1, "s_plate": s2,
+            "e_plate": e2, "e_rinse": e3,
             "iv_plate": iv2
         }
 
-    # 同じPlatingTypeは同時実行不可
+    # 同じPlatingTypeのめっき工程は同時不可（仮ルール）
     for pt in jobs_df["PlatingType"].unique():
-        ivs = [job_vars[jid]["iv_plate"] for jid in job_vars if job_vars[jid]["PlatingType"] == pt]
+        ivs = [job_vars[j]["iv_plate"] for j in job_vars if job_vars[j]["PlatingType"] == pt]
         if len(ivs) > 1:
             model.AddNoOverlap(ivs)
 
@@ -64,15 +74,20 @@ def schedule_jobs(jobs_df, tanks_df, start_date):
 
     results = []
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        for jid in jobs_df['JobID']:
-            base = pd.to_datetime(start_date)
-            times = {
-                'JobID': jid,
-                'PlatingType': job_vars[jid]['PlatingType'],
-                '入槽開始': (base + pd.to_timedelta(solver.Value(model.VarFromName(f"start_soak_{jid}")), unit='m')).strftime('%Y-%m-%d %H:%M'),
-                'めっき開始': (base + pd.to_timedelta(solver.Value(model.VarFromName(f"start_plate_{jid}")), unit='m')).strftime('%Y-%m-%d %H:%M'),
-                'めっき終了': (base + pd.to_timedelta(solver.Value(model.VarFromName(f"end_plate_{jid}")), unit='m')).strftime('%Y-%m-%d %H:%M'),
-                '出槽終了': (base + pd.to_timedelta(solver.Value(model.VarFromName(f"end_rinse_{jid}")), unit='m')).strftime('%Y-%m-%d %H:%M'),
-            }
-            results.append(times)
+        base = pd.to_datetime(start_date)
+        for jid in job_vars:
+            s_soak = solver.Value(job_vars[jid]["s_soak"])
+            s_plate = solver.Value(job_vars[jid]["s_plate"])
+            e_plate = solver.Value(job_vars[jid]["e_plate"])
+            e_rinse = solver.Value(job_vars[jid]["e_rinse"])
+
+            results.append({
+                "JobID": jid,
+                "PlatingType": job_vars[jid]["PlatingType"],
+                "入槽開始": (base + pd.to_timedelta(s_soak, unit="m")).strftime('%Y-%m-%d %H:%M'),
+                "めっき開始": (base + pd.to_timedelta(s_plate, unit="m")).strftime('%Y-%m-%d %H:%M'),
+                "めっき終了": (base + pd.to_timedelta(e_plate, unit="m")).strftime('%Y-%m-%d %H:%M'),
+                "出槽終了": (base + pd.to_timedelta(e_rinse, unit="m")).strftime('%Y-%m-%d %H:%M')
+            })
+
     return pd.DataFrame(results)
