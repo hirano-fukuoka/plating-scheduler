@@ -2,6 +2,7 @@ import pandas as pd
 from ortools.sat.python import cp_model
 
 def schedule_jobs(jobs_df, tanks_df, start_date):
+    from ortools.sat.python import cp_model
     model = cp_model.CpModel()
     horizon = 24 * 60 * 7  # 1週間分（分単位）
 
@@ -15,35 +16,32 @@ def schedule_jobs(jobs_df, tanks_df, start_date):
         interval = model.NewIntervalVar(start, dur, end, "interval" + suffix)
         job_vars[job_id] = {'start': start, 'end': end, 'interval': interval}
 
-    # 各PlatingTypeごとに同時処理を禁止する簡易制約
     for plating in jobs_df['PlatingType'].unique():
-        intervals = [
-            job_vars[row['JobID']]['interval']
-            for _, row in jobs_df.iterrows()
-            if row['PlatingType'] == plating
-        ]
+        intervals = [job_vars[row['JobID']]['interval'] for _, row in jobs_df.iterrows() if row['PlatingType'] == plating]
         if len(intervals) > 1:
             model.AddNoOverlap(intervals)
 
-    # 求解器
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
-    # ★★ ここで必ず初期化することで NameError を防ぐ ★★
     results = []
-
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        for job_id in job_vars:
-            start = solver.Value(job_vars[job_id]['start'])
-            end = solver.Value(job_vars[job_id]['end'])
+        for job_id in jobs_df['JobID']:  # ★jobID順に処理
+            s = solver.Value(job_vars[job_id]['start'])
+            e = solver.Value(job_vars[job_id]['end'])
             plating = jobs_df[jobs_df['JobID'] == job_id]['PlatingType'].values[0]
+
+            dt_start = pd.to_datetime(start_date) + pd.to_timedelta(s, unit='m')
+            dt_end = pd.to_datetime(start_date) + pd.to_timedelta(e, unit='m')
+
             results.append({
                 'JobID': job_id,
-                'Start': start,
-                'End': end,
-                'PlatingType': plating
+                'PlatingType': plating,
+                'Start': s,
+                'End': e,
+                '入槽日時': dt_start.strftime('%Y-%m-%d %H:%M'),
+                '出槽日時': dt_end.strftime('%Y-%m-%d %H:%M')
             })
-    else:
-        print("⚠️ スケジューラが解を見つけられませんでした")
 
-    return pd.DataFrame(results)  # results は必ず定義済み
+    return pd.DataFrame(results)
+
