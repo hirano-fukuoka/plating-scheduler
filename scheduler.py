@@ -1,11 +1,8 @@
-import pandas as pd
-from ortools.sat.python import cp_model
-
-def schedule_jobs(jobs_df, tanks_df):
+def schedule_jobs(jobs_df, tanks_df, start_date):
+    from ortools.sat.python import cp_model
     model = cp_model.CpModel()
     horizon = 24 * 60 * 7  # 1週間分（分単位）
 
-    # 準備
     job_vars = {}
     for i, row in jobs_df.iterrows():
         job_id = row['JobID']
@@ -16,16 +13,11 @@ def schedule_jobs(jobs_df, tanks_df):
         interval = model.NewIntervalVar(start, dur, end, "interval" + suffix)
         job_vars[job_id] = {'start': start, 'end': end, 'interval': interval}
 
-    # シンプルな重複防止制約（同じPlatingTypeは同時にできない）
     for plating in jobs_df['PlatingType'].unique():
-        intervals = []
-        for i, row in jobs_df.iterrows():
-            if row['PlatingType'] == plating:
-                intervals.append(job_vars[row['JobID']]['interval'])
+        intervals = [job_vars[row['JobID']]['interval'] for _, row in jobs_df.iterrows() if row['PlatingType'] == plating]
         if len(intervals) > 1:
             model.AddNoOverlap(intervals)
 
-    # 求解
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
