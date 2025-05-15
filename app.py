@@ -19,7 +19,7 @@ st.dataframe(jobs_df)
 if st.button("スケジュール作成"):
     schedule_df = schedule_jobs(jobs_df, tanks_df, start_date)
     if schedule_df.empty:
-        st.error("スケジューラが解を見つけられませんでした。データを確認してください。")
+        st.error("スケジューラが解を見つけられませんでした。データや制約条件を確認してください。")
     else:
         st.success("スケジュール作成完了")
         st.dataframe(schedule_df)
