@@ -3,19 +3,24 @@ from ortools.sat.python import cp_model
 
 def schedule_jobs(jobs_df, tanks_df, start_date):
     model = cp_model.CpModel()
-    horizon = 24 * 60 * 7  # 分単位の1週間分
+
+    # 🔄 DurationMinは「時間」単位 → 分に変換
+    jobs_df["DurationMinInt"] = (jobs_df["DurationMin"].astype(float) * 60).astype(int)
+
+    # ✅ horizon を動的に決定：総処理時間の合計 + 30% のバッファ
+    total_required_minutes = jobs_df["DurationMinInt"].sum()
+    horizon = int(total_required_minutes * 1.3)
 
     job_vars = {}
     for _, row in jobs_df.iterrows():
         job_id = row['JobID']
-        # ★ 時間を分に変換してスケジューラに渡す
-        dur_min = int(float(row['DurationMin']) * 60)
+        dur_min = row["DurationMinInt"]
         start = model.NewIntVar(0, horizon, f"start_{job_id}")
         end = model.NewIntVar(0, horizon, f"end_{job_id}")
         interval = model.NewIntervalVar(start, dur_min, end, f"interval_{job_id}")
         job_vars[job_id] = {'start': start, 'end': end, 'interval': interval}
 
-    # 同一めっき種類での同時処理を禁止（シンプル制約）
+    # PlatingTypeごとに重複不可制約（後で拡張可）
     for plating in jobs_df['PlatingType'].unique():
         intervals = [job_vars[row['JobID']]['interval'] for _, row in jobs_df.iterrows() if row['PlatingType'] == plating]
         if len(intervals) > 1:
