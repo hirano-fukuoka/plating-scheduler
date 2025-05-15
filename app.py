@@ -18,7 +18,11 @@ st.dataframe(jobs_df)
 
 if st.button("スケジュール作成"):
     schedule_df = schedule_jobs(jobs_df, tanks_df, start_date)
-    st.success("スケジュール作成完了")
-    st.dataframe(schedule_df)
-    fig = plot_gantt(schedule_df, start_date)
-    st.plotly_chart(fig)
+    if schedule_df.empty:
+        st.error("スケジューラが解を見つけられませんでした。データを確認してください。")
+    else:
+        st.success("スケジュール作成完了")
+        st.dataframe(schedule_df)
+        fig = plot_gantt(schedule_df, start_date)
+        st.plotly_chart(fig)
+
